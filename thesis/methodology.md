@@ -90,9 +90,13 @@ reported number is traceable to a committed log.
 
 ## 6. Demo user interface
 
-A Streamlit application (`app.py`) demonstrates the system end to end: given
-a user id and a model, it shows the items the user liked in training and
-the model's top-N recommendations with product titles, excluding items the
-user has already seen. Trained models are saved to `models/` after the
-first training run (`scripts/train_models.py`) so the UI loads instantly on
-later starts.
+A Streamlit storefront (`app.py`, "ElectroRec") demonstrates the system end
+to end as an Amazon-like shop: a home page with a personalized
+"Recommended for you" shelf (hybrid model) and a "Popular right now" shelf,
+full-text product search, and product pages showing the item's image, price,
+predicted rating (SVD), average rating, a "Similar items" shelf (item-based
+neighbours, content-similarity fallback for cold items) and a "Shoppers also
+liked" shelf (hybrid). Product images and prices come from the raw Amazon
+metadata (`scripts/add_product_media.py`). Trained models are saved to
+`models/` after the first training run (`scripts/train_models.py`) so the UI
+loads instantly on later starts.

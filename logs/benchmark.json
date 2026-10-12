@@ -1,0 +1,13 @@
+{
+  "n_users": 17422,
+  "n_items": 42384,
+  "timings_s": {
+    "data_load_s": 0.97,
+    "make_splits_s": 0.48,
+    "train_popularity_s": 0.05,
+    "train_itemknn_s": 1.75,
+    "train_svd_s": 37.14,
+    "train_content_s": 17.33,
+    "hybrid_recommend_one_user_s": 0.03
+  }
+}

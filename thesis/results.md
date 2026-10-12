@@ -71,3 +71,22 @@ scores.
 - Ranking is evaluated against a single held-out item per user, which makes
   absolute metric values small and noisy; the relative ordering of models
   is the meaningful signal.
+
+## 5. System performance
+
+Stage timings on the reference machine (`logs/benchmark.json`, seed 42):
+
+| stage | time |
+|---|---|
+| data load | 1.0 s |
+| train/val/test split | 0.5 s |
+| train popularity | < 0.1 s |
+| train item-KNN | 1.8 s |
+| train SVD (32 factors, 20 epochs) | 37.1 s |
+| train content encoder | 17.3 s |
+| one hybrid recommendation (42,384 items) | < 0.1 s |
+
+SVD dominates training cost (pure-Python SGD); inference is a single matrix
+multiply per model, so the storefront answers instantly. Saving trained
+models to disk (`models/`) means the UI never retrains: cold start is
+data loading plus model deserialization only.
