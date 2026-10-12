@@ -682,7 +682,19 @@ elif page[0] == "cart":
             with cols[1]:
                 st.write(f"**{d['title'][:80]}**")
             with cols[2]:
-                st.write(f"Qty: {qty}")
+                q1, q2, q3 = st.columns([1, 1, 1])
+                with q1:
+                    if st.button("−", key=f"dec-{iid}"):
+                        cart[iid] -= 1
+                        if cart[iid] <= 0:
+                            del cart[iid]
+                        st.rerun()
+                with q2:
+                    st.write(f"**{qty}**")
+                with q3:
+                    if st.button("+", key=f"inc-{iid}"):
+                        cart[iid] += 1
+                        st.rerun()
             with cols[3]:
                 p = price_val(d["price"])
                 if p != float("inf"):

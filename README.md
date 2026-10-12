@@ -59,7 +59,8 @@ An Amazon-like storefront ("ElectroRec"): personalized "Recommended for you"
 shelves, category browsing with sorting, full-text search with price/rating
 filters, product pages with images/prices/reviews/rating breakdowns, a cart,
 a wishlist, recently-viewed, a "your taste profile" page, shareable product
-deep links (`?product=<id>`), a "why recommended" explainer per product, and
+deep links (`?product=<id>`), a "why recommended" explainer per product, an
+"About" page with the real measured evaluation numbers, and
 a live side-by-side comparison of what each model recommends. The first
 start trains everything and saves it to `models/` (gitignored); later starts
 load the saved files instantly.
