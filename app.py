@@ -272,7 +272,7 @@ with h2:
         st.session_state.page = ("search", q)
         st.rerun()
 with h3:
-    c1, c2 = st.columns([3, 2])
+    c1, c2, c3 = st.columns([3, 2, 1])
     with c1:
         uid = st.text_input("u", value=st.session_state.uid,
                             label_visibility="collapsed", key="uid-input",
@@ -286,6 +286,12 @@ with h3:
         if st.button(f"🧺 Cart ({n_cart})", key="cart-btn",
                      width="stretch"):
             st.session_state.page = ("cart",)
+            st.rerun()
+    with c3:
+        if st.button("🎲", key="random-shopper", width="stretch",
+                     help="surprise me: random shopper"):
+            st.session_state.uid = str(np.random.choice(user_ids))
+            st.session_state.page = ("home",)
             st.rerun()
 u_idx = user_to_idx.get(st.session_state.uid, 0)
 
