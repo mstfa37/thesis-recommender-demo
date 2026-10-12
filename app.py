@@ -48,7 +48,7 @@ def _s(v) -> str:
     return "" if v is None or (isinstance(v, float) and np.isnan(v)) else str(v)
 
 
-@st.cache_resource
+@st.cache_resource(show_spinner="Loading the catalog and training splits…")
 def load_data():
     ratings, metadata = load_all(ROOT / "data" / "ratings.csv",
                                  ROOT / "data" / "metadata.csv")
@@ -78,7 +78,7 @@ def load_data():
     return ratings, train, val, info, reviews
 
 
-@st.cache_resource
+@st.cache_resource(show_spinner="Loading the trained models…")
 def load_models(_train):
     return {
         "popularity": PopularityModel.load(MODEL_DIR / "popularity.npz"),
