@@ -287,6 +287,7 @@ with h2:
     if q and q != st.session_state.get("last_q"):
         st.session_state.last_q = q
         st.session_state.page = ("search", q)
+        st.session_state.search_n = 48
         st.rerun()
 with h3:
     c1, c2, c3 = st.columns([3, 2, 1])
@@ -519,16 +520,22 @@ elif page[0] == "search":
         hits.sort(key=lambda iid: -float(avg_rating.get(item_pos[iid], 0)))
     elif sort == "Price: low to high":
         hits.sort(key=lambda iid: price_val(info[iid]["price"]))
-    hits = hits[:48]
-    st.caption(f"{len(hits)} shown")
-    if hits:
-        product_grid(hits, info, key_prefix="search",
-                     extras=rating_extras(hits, info, avg_rating,
+    if "search_n" not in st.session_state:
+        st.session_state.search_n = 48
+    shown = hits[:st.session_state.search_n]
+    st.caption(f"{len(shown)} shown of {len(hits)} matches")
+    if shown:
+        product_grid(shown, info, key_prefix="search",
+                     extras=rating_extras(shown, info, avg_rating,
                                            rating_counts, item_pos, models,
                                            u_idx))
     else:
         st.write("No products matched those filters. Try 'cable', 'battery' "
                  "or 'headphone'.")
+    if st.session_state.search_n < len(hits):
+        if st.button("Show more results", key="search-more"):
+            st.session_state.search_n += 48
+            st.rerun()
 
 elif page[0] == "product":
     iid = page[1]
