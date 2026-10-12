@@ -142,7 +142,7 @@ def product_grid(item_ids, info, extras=None, key_prefix="g", add_cart=True):
             with cols[ci]:
                 st.markdown(card_html(iid, info[iid], extras.get(iid, "")),
                             unsafe_allow_html=True)
-                b1, b2 = st.columns(2)
+                b1, b2, b3 = st.columns(3)
                 with b1:
                     if st.button("View", key=f"{key_prefix}-v-{ri}-{ci}-{iid}",
                                  width="stretch"):
@@ -157,6 +157,17 @@ def product_grid(item_ids, info, extras=None, key_prefix="g", add_cart=True):
                                               width="stretch"):
                         cart = st.session_state.cart
                         cart[iid] = cart.get(iid, 0) + 1
+                        st.rerun()
+                with b3:
+                    wished = iid in st.session_state.wishlist
+                    if st.button("❤️" if wished else "🤍",
+                                 key=f"{key_prefix}-w-{ri}-{ci}-{iid}",
+                                 width="stretch",
+                                 help="wishlist"):
+                        if wished:
+                            st.session_state.wishlist.discard(iid)
+                        else:
+                            st.session_state.wishlist.add(iid)
                         st.rerun()
 
 
@@ -206,6 +217,11 @@ item_pos = {str(x): k for k, x in enumerate(item_ids)}
 user_to_idx = {u: k for k, u in enumerate(user_ids)}
 train_items = {int(u): set(g["i"].astype(int)) for u, g in train.groupby("u")}
 val_items = {int(u): set(g["i"].astype(int)) for u, g in val.groupby("u")}
+train_ratings = {
+    int(u): sorted(zip(g["i"].astype(int), g["rating"].astype(float)),
+                   key=lambda t: -t[1])
+    for u, g in train.groupby("u")
+}
 avg_rating = train.groupby("i")["rating"].mean()
 rating_counts = train.groupby("i")["rating"].count()
 
@@ -215,8 +231,20 @@ if "uid" not in st.session_state:
     st.session_state.uid = str(user_ids[0])
 if "cart" not in st.session_state:
     st.session_state.cart = {}
+if "wishlist" not in st.session_state:
+    st.session_state.wishlist = set()
 if "recently_viewed" not in st.session_state:
     st.session_state.recently_viewed = []
+
+# deep links: ?product=<item_id> opens that product directly
+_qp = st.query_params
+_qp_product = _qp.get("product", "")
+if _qp_product and _qp_product in info and st.session_state.page != ("product", _qp_product):
+    st.session_state.page = ("product", _qp_product)
+    rv = st.session_state.recently_viewed
+    if _qp_product in rv:
+        rv.remove(_qp_product)
+    st.session_state.recently_viewed = [_qp_product] + rv[:11]
 
 # top categories for the nav strip
 cat_counts = pd.Series([d["category"] for d in info.values()]).value_counts()
@@ -234,6 +262,7 @@ h1, h2, h3 = st.columns([2, 5, 3])
 with h1:
     if st.button("🛒 ElectroRec", key="logo"):
         st.session_state.page = ("home",)
+        st.query_params.clear()
         st.rerun()
 with h2:
     q = st.text_input("q", placeholder="Search headphones, cables, chargers…",
@@ -269,7 +298,21 @@ for i, cat in enumerate(top_cats):
         if st.button(cat[:16], key=f"nav-{i}",
                      help=cat, width="stretch"):
             st.session_state.page = ("category", cat)
+            st.session_state.cat_n = 24
             st.rerun()
+
+# ---- secondary nav ----
+s1, s2, s3 = st.columns([1, 1, 8])
+with s1:
+    if st.button("⭐ Your taste", key="nav-taste", width="stretch"):
+        st.session_state.page = ("taste",)
+        st.rerun()
+with s2:
+    n_wish = len(st.session_state.wishlist)
+    if st.button(f"❤️ Wishlist ({n_wish})", key="nav-wish",
+                 width="stretch"):
+        st.session_state.page = ("wishlist",)
+        st.rerun()
 
 page = st.session_state.page
 
@@ -387,24 +430,62 @@ elif page[0] == "category":
     else:
         in_cat.sort(key=lambda iid: -int(rating_counts.get(item_pos[iid], 0)))
     st.caption(f"{len(in_cat)} products")
-    product_grid(in_cat[:24], info, key_prefix="cat",
-                 extras=rating_extras(in_cat[:24], info, avg_rating,
+    if "cat_n" not in st.session_state:
+        st.session_state.cat_n = 24
+    shown = in_cat[:st.session_state.cat_n]
+    product_grid(shown, info, key_prefix="cat",
+                 extras=rating_extras(shown, info, avg_rating,
                                       rating_counts, item_pos, models, u_idx))
+    if st.session_state.cat_n < len(in_cat):
+        if st.button("Show more", key="cat-more"):
+            st.session_state.cat_n += 24
+            st.rerun()
 
 elif page[0] == "search":
     query = page[1].lower()
-    hits = [iid for iid, d in info.items() if query in d["title"].lower()][:24]
+    hits = [iid for iid, d in info.items()
+            if query in d["title"].lower() or query in d["desc"].lower()]
     st.header(f'Results for "{page[1]}"')
+    f1, f2, f3 = st.columns(3)
+    with f1:
+        max_price = st.selectbox("Max price", ["Any", "$10", "$25", "$50", "$100"],
+                                 key="s-price")
+    with f2:
+        min_stars = st.selectbox("Min rating", ["Any", "3★+", "4★+", "4.5★+"],
+                                 key="s-stars")
+    with f3:
+        sort = st.selectbox("Sort by", ["Relevance", "Top rated",
+                                        "Price: low to high"],
+                            key="s-sort")
+    if max_price != "Any":
+        cap = float(max_price.replace("$", ""))
+        hits = [iid for iid in hits
+                if price_val(info[iid]["price"]) <= cap]
+    if min_stars != "Any":
+        thresh = float(min_stars.replace("★+", "").replace("★", ""))
+        hits = [iid for iid in hits
+                if float(avg_rating.get(item_pos[iid], 0)) >= thresh]
+    if sort == "Top rated":
+        hits.sort(key=lambda iid: -float(avg_rating.get(item_pos[iid], 0)))
+    elif sort == "Price: low to high":
+        hits.sort(key=lambda iid: price_val(info[iid]["price"]))
+    hits = hits[:48]
     st.caption(f"{len(hits)} shown")
     if hits:
-        product_grid(hits, info, key_prefix="search")
+        product_grid(hits, info, key_prefix="search",
+                     extras=rating_extras(hits, info, avg_rating,
+                                           rating_counts, item_pos, models,
+                                           u_idx))
     else:
-        st.write("No products matched. Try 'cable', 'battery' or 'headphone'.")
+        st.write("No products matched those filters. Try 'cable', 'battery' "
+                 "or 'headphone'.")
 
 elif page[0] == "product":
     iid = page[1]
     d = info[iid]
     pos = item_pos[iid]
+    if st.query_params.get("product", "") != iid:
+        st.query_params["product"] = iid
     st.caption(f"Home / {d['category']} / {d['title'][:60]}")
     c1, c2 = st.columns([1, 2])
     with c1:
@@ -424,10 +505,26 @@ elif page[0] == "product":
             st.subheader(f":red[{price_str(d['price'])}]")
         pred = float(models["svd"].predict_rating(u_idx, pos))
         st.info(f"Based on your taste you'd probably rate it **{pred:.1f}**.")
-        if st.button("🧺 Add to cart", key=f"pdp-add-{iid}"):
-            cart = st.session_state.cart
-            cart[iid] = cart.get(iid, 0) + 1
-            st.rerun()
+        b1, b2 = st.columns(2)
+        with b1:
+            if st.button("🧺 Add to cart", key=f"pdp-add-{iid}",
+                         width="stretch"):
+                cart = st.session_state.cart
+                cart[iid] = cart.get(iid, 0) + 1
+                st.rerun()
+        with b2:
+            wished = iid in st.session_state.wishlist
+            if st.button("❤️ Saved" if wished else "🤍 Wishlist",
+                         key=f"pdp-wish-{iid}", width="stretch"):
+                if wished:
+                    st.session_state.wishlist.discard(iid)
+                else:
+                    st.session_state.wishlist.add(iid)
+                st.rerun()
+        with st.expander("🔗 Share this product"):
+            st.text_input("Copy the link", value=f"?product={iid}",
+                          key=f"share-{iid}",
+                          help="Deep link to this product")
         if d["desc"]:
             st.write("**About this item**")
             st.write(d["desc"][:600] + ("…" if len(d["desc"]) > 600 else ""))
@@ -531,6 +628,47 @@ elif page[0] == "cart":
         if st.button("Continue shopping"):
             st.session_state.page = ("home",)
             st.rerun()
+
+elif page[0] == "taste":
+    st.header(f"Your taste profile")
+    st.caption(f"Shopper {st.session_state.uid} — everything below comes from "
+               "the training ratings. This is what the recommender learns "
+               "from: change the shopper id up top and watch the shelves change.")
+    rated = train_ratings.get(u_idx, [])
+    if not rated:
+        st.write("This shopper has no training ratings.")
+    else:
+        n_rated = len(rated)
+        avg_given = sum(r for _, r in rated) / n_rated
+        cats = {}
+        for i, _ in rated:
+            c = info[str(item_ids[i])]["category"]
+            cats[c] = cats.get(c, 0) + 1
+        fav_cat = max(cats, key=cats.get) if cats else "—"
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Items rated", n_rated)
+        m2.metric("Average rating given", f"{avg_given:.1f}")
+        m3.metric("Favorite category", fav_cat[:20])
+        st.caption(f"{len(rated)} items rated, best first")
+        top = [str(item_ids[i]) for i, _ in rated[:24]]
+        extras = {}
+        for i, r in rated[:24]:
+            iid = str(item_ids[i])
+            extras[iid] = (f'<span style="color:#e67e22">{stars(r)}</span> '
+                           f'you rated {r:.0f}')
+        product_grid(top, info, extras=extras, key_prefix="taste")
+
+elif page[0] == "wishlist":
+    st.header("Your wishlist")
+    wished = [iid for iid in st.session_state.wishlist if iid in info]
+    if not wished:
+        st.write("Nothing saved yet — tap 🤍 on any product to keep it here.")
+    else:
+        st.caption(f"{len(wished)} saved items")
+        product_grid(wished, info, key_prefix="wish",
+                      extras=rating_extras(wished, info, avg_rating,
+                                           rating_counts, item_pos, models,
+                                           u_idx))
 
 st.markdown("---")
 st.caption("ElectroRec — BSc thesis demo: weighted hybrid recommender "
