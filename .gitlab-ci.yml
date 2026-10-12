@@ -1,0 +1,17 @@
+stages:
+  - test
+
+# CI runs the unit tests only. Tests that need the real dataset
+# (data/ratings.csv, data/metadata.csv) skip cleanly when the files are
+# absent; the pipeline NEVER generates synthetic data as a substitute.
+test:
+  stage: test
+  image: python:3.12-slim
+  before_script:
+    - pip install --quiet --index-url https://download.pytorch.org/whl/cpu
+      --extra-index-url https://pypi.org/simple -r requirements.txt
+  script:
+    - PYTHONPATH=src pytest -q tests/
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "push"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"

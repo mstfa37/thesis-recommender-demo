@@ -1,0 +1,27 @@
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Large Datasets & Model Artifacts
+data/*.csv
+data/*.json
+data/*.gz
+!data/.gitkeep
+*.pt
+*.bin
+.transformers_cache/
+
+# IDE & OS configuration
+.vscode/
+.idea/
+.DS_Storedata_raw/
+REPORT.md
+data_raw/
+models/

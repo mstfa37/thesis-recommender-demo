@@ -1,0 +1,19 @@
+{
+  "timestamp_utc": "2026-10-11T19:41:10.015765+00:00",
+  "reviews_url": "http://snap.stanford.edu/data/amazon/productGraph/categoryFiles/reviews_Electronics_5.json.gz",
+  "metadata_url": "http://snap.stanford.edu/data/amazon/productGraph/categoryFiles/meta_Electronics.json.gz",
+  "sampling_rule": "keep user iff int(md5(reviewerID).hexdigest(),16) % 100 < 9 (deterministic, ~9% of users)",
+  "reviews_scanned": 1689188,
+  "ratings_kept": 154413,
+  "skipped_lines": 0,
+  "out_of_range_ratings": 0,
+  "unique_users": 17422,
+  "unique_items": 42384,
+  "items_with_metadata": 42384,
+  "items_without_metadata": 0,
+  "ratings_csv": "/home/hatch/workspace/bsc-thesis-recommender/data/ratings.csv",
+  "ratings_sha256": "cd954be24d1d845ac23c09060730b32e4d7eeb8d458db0b27aa5e40eb4558252",
+  "metadata_csv": "/home/hatch/workspace/bsc-thesis-recommender/data/metadata.csv",
+  "metadata_sha256": "1f078865d9cde734490090380a6353b1a15d2ca6c78fd15e3d3c7f2d767cab9f",
+  "elapsed_seconds": 117.9
+}
