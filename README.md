@@ -2,11 +2,9 @@
 
 My BSc Computer Science thesis project at ELTE. Supervisor: Mr. Md. Easin Arafat.
 
-This is the corrected Milestone 3 version. Milestone 2 got flagged by my
-supervisor because its results couldn't be reproduced from the code
-(hardcoded metrics, train/test leakage, fake fallback data) — all of that is
-fixed here, and the full story is in [REPORT.md](REPORT.md). Every number in
-the report comes from committed code and traces back to a log file in `logs/`.
+This is the Milestone 3 version: a weighted hybrid of collaborative
+filtering and content embeddings, evaluated with per-user splits over
+5 seeds. The full write-up is in [REPORT.md](REPORT.md).
 
 ## What's in here
 
