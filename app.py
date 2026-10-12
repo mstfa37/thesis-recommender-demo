@@ -211,6 +211,22 @@ ratings, train, val, info, reviews = load_data()
 models = load_models(train)
 hybrid = get_hybrid(models)
 
+# The saved models were trained on a specific dataset. If someone swaps in
+# a different data/*.csv without retraining, fail with a helpful page
+# instead of confusing index errors.
+n_users, n_items = ratings["user_id"].nunique(), ratings["item_id"].nunique()
+_mismatched = [name for name, m in models.items()
+               if getattr(m, "n_users", n_users) != n_users
+               or getattr(m, "n_items", n_items) != n_items]
+if _mismatched:
+    st.error("## ⚠️ Models don't match the data\n\n"
+             f"The saved models ({', '.join(_mismatched)}) were trained on a "
+             f"different dataset ({n_users} shoppers / {n_items} products here). "
+             "Retrain them for this data with:\n\n"
+             "`python scripts/train_models.py`\n\n"
+             "then restart the app.")
+    st.stop()
+
 user_ids = np.sort(ratings["user_id"].unique())
 item_ids = np.sort(ratings["item_id"].unique())
 item_pos = {str(x): k for k, x in enumerate(item_ids)}
@@ -246,9 +262,10 @@ if _qp_product and _qp_product in info and st.session_state.page != ("product", 
         rv.remove(_qp_product)
     st.session_state.recently_viewed = [_qp_product] + rv[:11]
 
-# top categories for the nav strip
+# top categories for the nav strip (hidden entirely if the dataset has none)
 cat_counts = pd.Series([d["category"] for d in info.values()]).value_counts()
-top_cats = [c for c in cat_counts.head(10).index]
+real_cats = [c for c in cat_counts.index if c != "Miscellaneous"]
+top_cats = [c for c in real_cats[:10]]
 
 # ---- header ----
 st.markdown("""
@@ -296,18 +313,19 @@ with h3:
 u_idx = user_to_idx.get(st.session_state.uid, 0)
 
 # ---- category nav ----
-nav_cols = st.columns(len(top_cats) + 1)
-with nav_cols[0]:
-    if st.button("All", key="nav-all"):
-        st.session_state.page = ("home",)
-        st.rerun()
-for i, cat in enumerate(top_cats):
-    with nav_cols[i + 1]:
-        if st.button(cat[:16], key=f"nav-{i}",
-                     help=cat, width="stretch"):
-            st.session_state.page = ("category", cat)
-            st.session_state.cat_n = 24
+if top_cats:
+    nav_cols = st.columns(len(top_cats) + 1)
+    with nav_cols[0]:
+        if st.button("All", key="nav-all"):
+            st.session_state.page = ("home",)
             st.rerun()
+    for i, cat in enumerate(top_cats):
+        with nav_cols[i + 1]:
+            if st.button(cat[:16], key=f"nav-{i}",
+                         help=cat, width="stretch"):
+                st.session_state.page = ("category", cat)
+                st.session_state.cat_n = 24
+                st.rerun()
 
 # ---- secondary nav ----
 s1, s2, s3 = st.columns([1, 1, 8])
@@ -326,6 +344,8 @@ page = st.session_state.page
 
 # --------------------------------------------------------------------------- #
 def shelf(title, subtitle, item_ids, **kw):
+    if not item_ids:
+        return  # dataset doesn't have what this shelf needs: hide it
     st.subheader(title)
     if subtitle:
         st.caption(subtitle)
@@ -512,7 +532,9 @@ elif page[0] == "product":
     pos = item_pos[iid]
     if st.query_params.get("product", "") != iid:
         st.query_params["product"] = iid
-    st.caption(f"Home / {d['category']} / {d['title'][:60]}")
+    crumbs = "Home" + (f" / {d['category']}" if d["category"] != "Miscellaneous"
+                       else "") + f" / {d['title'][:60]}"
+    st.caption(crumbs)
     c1, c2 = st.columns([1, 2])
     with c1:
         st.markdown(f"""<img src="{d['image']}" loading="lazy"

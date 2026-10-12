@@ -371,3 +371,159 @@ def test_load_metadata_fills_missing_text(tmp_path):
                   "description": ["x"]}).to_csv(p, index=False)
     df = load_metadata(p)
     assert df.loc[0, "title"] == ""
+
+
+def test_load_metadata_keeps_optional_storefront_columns(tmp_path):
+    p = tmp_path / "meta.csv"
+    pd.DataFrame({
+        "item_id": ["b1", "b2"],
+        "title": ["t1", "t2"],
+        "description": ["d1", "d2"],
+        "image_url": ["http://img/1.jpg", None],
+        "price": ["9.99", None],
+        "category": ["Cases", None],
+    }).to_csv(p, index=False)
+    df = load_metadata(p)
+    assert df.loc[0, "image_url"] == "http://img/1.jpg"
+    assert df.loc[1, "image_url"] == ""  # NaN -> "", never "nan"
+    assert df.loc[1, "price"] == ""
+    assert df.loc[0, "category"] == "Cases"
+
+
+def test_load_metadata_works_without_optional_columns(tmp_path):
+    # any catalog CSV works: only item_id + title required, optionals "" 
+    p = tmp_path / "meta.csv"
+    pd.DataFrame({"item_id": ["b"], "title": ["t"]}).to_csv(p, index=False)
+    df = load_metadata(p)
+    for c in ("description", "image_url", "price", "category"):
+        assert c in df.columns and df.loc[0, c] == ""
+
+
+# --------------------------------------------------------------------------- #
+# more data_loader coverage
+# --------------------------------------------------------------------------- #
+def test_sha256_of_file(tmp_path):
+    from data_loader import sha256_of_file
+    p = tmp_path / "f.bin"
+    p.write_bytes(b"abc")
+    import hashlib
+    assert sha256_of_file(p) == hashlib.sha256(b"abc").hexdigest()
+
+
+def test_load_all_loads_both(tmp_path):
+    from data_loader import load_all
+    rp = tmp_path / "ratings.csv"
+    mp = tmp_path / "meta.csv"
+    _tiny_ratings().to_csv(rp, index=False)
+    pd.DataFrame({"item_id": ["i1"], "title": ["t"], "description": ["d"]}
+                 ).to_csv(mp, index=False)
+    ratings, meta = load_all(rp, mp)
+    assert len(ratings) == 12 and len(meta) == 1
+
+
+# --------------------------------------------------------------------------- #
+# metric helper edge cases
+# --------------------------------------------------------------------------- #
+def test_topk_edge_cases():
+    from evaluator import _topk_ordered, _dcg
+    assert len(_topk_ordered(np.array([1.0, 2.0]), 0)) == 0
+    # k bigger than n -> all items, ordered
+    assert list(_topk_ordered(np.array([1.0, 3.0, 2.0]), 10)) == [1, 2, 0]
+    assert _dcg(np.array([1.0, 0.0, 1.0])) > _dcg(np.array([0.0, 1.0, 1.0]))
+
+
+def test_itemknn_unknown_user_falls_back_to_item_mean():
+    train, n_users, n_items = _encoded_tiny()
+    m = ItemKNNModel(k=2, seed=7).fit(train, n_users, n_items)
+    # user 999 was never seen: prediction = item mean, clipped
+    assert m.predict_rating(999, 0) == pytest.approx(
+        np.clip(m.item_mean[0], 1.0, 5.0))
+    s = m.score_all_items(999)
+    assert np.allclose(s, np.clip(m.item_mean, 1.0, 5.0))
+
+
+# --------------------------------------------------------------------------- #
+# tuning + full experiment driver on tiny data
+# --------------------------------------------------------------------------- #
+def _write_tiny_csvs(tmp_path):
+    rp = tmp_path / "ratings.csv"
+    mp = tmp_path / "metadata.csv"
+    _tiny_ratings().to_csv(rp, index=False)
+    pd.DataFrame({
+        "item_id": ["i1", "i2", "i3", "i4"],
+        "title": ["cable fast", "battery pack", "headphone loud", "charger mini"],
+        "description": ["a", "b", "c", "d"],
+    }).to_csv(mp, index=False)
+    return tmp_path
+
+
+def test_tuning_grid_search_picks_best_cell(tmp_path):
+    from tuning import run_grid_search
+    import json
+    data_dir = _write_tiny_csvs(tmp_path)
+    payload = run_grid_search(svd_factors_grid=[2], alpha_grid=[0.0, 0.5, 1.0],
+                              seed=42, log_dir=tmp_path / "logs", data_dir=data_dir)
+    assert len(payload["grid_results"]) == 3
+    best = payload["best"]
+    assert best["svd_factors"] == 2
+    # best cell really is the max ndcg@5 in the grid
+    top = max(r["ndcg@5"] for r in payload["grid_results"])
+    assert best["ndcg@5"] == pytest.approx(top)
+    assert (tmp_path / "logs" / "grid_search.json").is_file()
+
+
+def test_run_experiment_writes_logs(tmp_path):
+    from evaluator import run_experiment
+    import json
+    data_dir = _write_tiny_csvs(tmp_path)
+    payload = run_experiment(seeds=[7], svd_factors=2, alpha=0.5,
+                             log_dir=tmp_path / "logs", data_dir=data_dir)
+    for f in ("eval_seeds.json", "eval_summary.json", "summary.md"):
+        assert (tmp_path / "logs" / f).is_file()
+    assert payload["summary"]["hybrid"]["ndcg@5"]["n_seeds"] == 1
+    assert payload["config"]["svd_factors"] == 2
+    # summary.md is human-readable and mentions the models
+    md = (tmp_path / "logs" / "summary.md").read_text()
+    assert "hybrid" in md and "svd" in md
+
+
+def test_run_experiment_resumes_from_partial_checkpoint(tmp_path, capsys):
+    from evaluator import run_experiment
+    import json, shutil
+    data_dir = _write_tiny_csvs(tmp_path)
+    log_dir = tmp_path / "logs"
+    run_experiment(seeds=[7], svd_factors=2, alpha=0.5,
+                   log_dir=log_dir, data_dir=data_dir)
+    # Fake a partial checkpoint from the finished run, then re-run: the seed
+    # must be picked up, not recomputed.
+    finished = json.loads((log_dir / "eval_seeds.json").read_text())
+    with open(log_dir / "eval_seeds_partial.json", "w") as f:
+        json.dump({"config": finished["config"],
+                   "per_seed": finished["per_seed"]}, f)
+    payload = run_experiment(seeds=[7], svd_factors=2, alpha=0.5,
+                             log_dir=log_dir, data_dir=data_dir)
+    assert "Resuming with 1 finished seed(s)" in capsys.readouterr().out
+    assert payload["summary"]["hybrid"]["ndcg@5"]["n_seeds"] == 1
+
+
+def test_run_experiment_ignores_checkpoint_for_other_config(tmp_path, capsys):
+    from evaluator import run_experiment
+    import json
+    data_dir = _write_tiny_csvs(tmp_path)
+    log_dir = tmp_path / "logs"
+    (log_dir).mkdir(parents=True, exist_ok=True)
+    with open(log_dir / "eval_seeds_partial.json", "w") as f:
+        json.dump({"config": {"svd_factors": 999, "hybrid_alpha": 0.5,
+                              "data": {"ratings_sha256": "nope"}},
+                   "per_seed": {}}, f)
+    run_experiment(seeds=[7], svd_factors=2, alpha=0.5,
+                   log_dir=log_dir, data_dir=data_dir)
+    assert "different config; ignoring it" in capsys.readouterr().out
+
+
+def test_itemknn_topk_truncation_keeps_best(tmp_path):
+    train, n_users, n_items = _encoded_tiny()
+    m = ItemKNNModel(k=1, seed=7).fit(train, n_users, n_items)
+    sim = m.sim_topk.tocsr()
+    for i in range(n_items):
+        assert sim.indptr[i + 1] - sim.indptr[i] <= 1

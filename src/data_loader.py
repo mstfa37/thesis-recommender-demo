@@ -19,7 +19,10 @@ import numpy as np
 import pandas as pd
 
 RATINGS_COLUMNS = ["user_id", "item_id", "rating", "timestamp"]
-METADATA_COLUMNS = ["item_id", "title", "description"]
+METADATA_COLUMNS = ["item_id", "title"]
+# Optional storefront columns (kept when present, defaulted to "" when the
+# dataset doesn't have them, so any catalog CSV works).
+METADATA_OPTIONAL_COLUMNS = ["description", "image_url", "price", "category"]
 
 DEFAULT_RATINGS_PATH = Path("data/ratings.csv")
 DEFAULT_METADATA_PATH = Path("data/metadata.csv")
@@ -62,9 +65,15 @@ def load_metadata(path: Path | str = DEFAULT_METADATA_PATH) -> pd.DataFrame:
     missing = [c for c in METADATA_COLUMNS if c not in df.columns]
     if missing:
         raise ValueError(f"{path} is missing columns: {missing}")
-    df = df[METADATA_COLUMNS].copy()
+    keep = METADATA_COLUMNS + [c for c in METADATA_OPTIONAL_COLUMNS
+                               if c in df.columns]
+    df = df[keep].copy()
     df["title"] = df["title"].fillna("").astype(str)
-    df["description"] = df["description"].fillna("").astype(str)
+    for c in METADATA_OPTIONAL_COLUMNS:
+        if c not in df.columns:
+            df[c] = ""
+        else:
+            df[c] = df[c].fillna("").astype(str)
     return df.drop_duplicates(subset="item_id").reset_index(drop=True)
 
 
