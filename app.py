@@ -792,6 +792,12 @@ evaluation below, so it powers the "Recommended for you" shelf.
                 "Recall@5 ↑": f"{m['recall@5']['mean']:.4f}",
             })
         st.table(rows)
+        chart = pd.DataFrame({
+            "model": [r["model"] for r in rows],
+            "NDCG@5": [summ[r["model"]]["ndcg@5"]["mean"] for r in rows],
+        }).set_index("model")
+        st.bar_chart(chart)
+        st.caption("Higher is better. The hybrid (α=0.7) wins.")
     else:
         st.info("Evaluation logs aren't bundled with this deployment — "
                 "run `python scripts/run_experiments.py` locally to "
