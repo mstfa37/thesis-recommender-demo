@@ -22,7 +22,7 @@ def main() -> None:
 
     print("Reading image urls + prices from the raw metadata...", flush=True)
     t0 = time.time()
-    media: dict[str, tuple[str, str]] = {}
+    media: dict[str, tuple[str, str, str]] = {}
     with gzip.open(RAW_META, "rt", encoding="utf-8", errors="replace") as f:
         for line in f:
             line = line.strip()
@@ -38,18 +38,23 @@ def main() -> None:
             url = str(d.get("imUrl") or "").replace("http://", "https://")
             price = d.get("price")
             price = "" if price is None else str(price).strip()
-            media[str(asin)] = (url, price)
+            cats = d.get("categories") or []
+            cat = cats[0][-1] if cats and cats[0] else ""
+            media[str(asin)] = (url, price, str(cat))
     print(f"  {len(media)} products with media info in {time.time() - t0:.1f}s",
           flush=True)
 
     meta = pd.read_csv(METADATA_CSV, dtype=str).fillna("")
-    meta["image_url"] = meta["item_id"].map(lambda x: media.get(x, ("", ""))[0])
-    meta["price"] = meta["item_id"].map(lambda x: media.get(x, ("", ""))[1])
+    meta["image_url"] = meta["item_id"].map(lambda x: media.get(x, ("", "", ""))[0])
+    meta["price"] = meta["item_id"].map(lambda x: media.get(x, ("", "", ""))[1])
+    meta["category"] = meta["item_id"].map(lambda x: media.get(x, ("", "", ""))[2])
     meta.to_csv(METADATA_CSV, index=False)
     n_img = (meta["image_url"] != "").sum()
     n_price = (meta["price"] != "").sum()
+    n_cat = (meta["category"] != "").sum()
     print(f"Wrote {METADATA_CSV}: {n_img}/{len(meta)} with images, "
-          f"{n_price}/{len(meta)} with prices", flush=True)
+          f"{n_price}/{len(meta)} with prices, {n_cat}/{len(meta)} with category",
+          flush=True)
 
 
 if __name__ == "__main__":
