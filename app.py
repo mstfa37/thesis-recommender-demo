@@ -815,6 +815,13 @@ elif page[0] == "wishlist":
         st.write("Nothing saved yet — tap 🤍 on any product to keep it here.")
     else:
         st.caption(f"{len(wished)} saved items")
+        if st.button("Move all to cart"):
+            cart = st.session_state.cart
+            for iid in wished:
+                cart[iid] = cart.get(iid, 0) + 1
+            st.session_state.wishlist = set()
+            st.session_state.page = ("cart",)
+            st.rerun()
         product_grid(wished, info, key_prefix="wish",
                       extras=rating_extras(wished, info, avg_rating,
                                            rating_counts, item_pos, models,
