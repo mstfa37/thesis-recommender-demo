@@ -55,11 +55,26 @@ PYTHONPATH=src python src/evaluator.py --svd-factors 20 --alpha 0.7
 streamlit run app.py
 ```
 
-Pick a user id and a model and it shows the items the user liked in
-training plus the model's top-N recommendations with product titles.
-The first start trains everything and saves it to `models/` (gitignored);
-later starts load the saved files instantly. The Results tab shows the
-test numbers from `logs/eval_summary.json`.
+An Amazon-like storefront ("ElectroRec"): personalized "Recommended for you"
+shelves, category browsing, search, product pages with images/prices/reviews,
+a cart, and a "why recommended" explainer per product. The first start
+trains everything and saves it to `models/` (gitignored); later starts load
+the saved files instantly.
+
+### Using your own dataset
+
+The pipeline and the UI adapt to any catalog — only two CSVs are required:
+
+| file | required columns | optional columns (UI degrades gracefully without them) |
+|---|---|---|
+| `data/ratings.csv` | `user_id`, `item_id`, `rating` | — |
+| `data/metadata.csv` | `item_id`, `title` | `description`, `image_url`, `price`, `category` |
+| `data/reviews.csv` | — (optional file) | `item_id`, `reviewer`, `rating`, `summary`, `text` |
+
+Missing optionals just hide their UI parts: no `image_url` → placeholder
+art, no `price` → prices hidden, no `category` → category nav hidden,
+no `reviews.csv` → review sections hidden. Retrain with
+`scripts/train_models.py` and the storefront works on the new catalog.
 
 ## Thesis text
 

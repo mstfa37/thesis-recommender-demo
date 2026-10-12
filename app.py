@@ -43,29 +43,33 @@ PLACEHOLDER_IMG = (
 # --------------------------------------------------------------------------- #
 # data + models
 # --------------------------------------------------------------------------- #
+def _s(v) -> str:
+    """NaN-safe string: missing CSV fields become '' instead of 'nan'."""
+    return "" if v is None or (isinstance(v, float) and np.isnan(v)) else str(v)
+
+
 @st.cache_resource
 def load_data():
     ratings, metadata = load_all(ROOT / "data" / "ratings.csv",
                                  ROOT / "data" / "metadata.csv")
     train, val, test, _ = make_splits(ratings)
-    for col in ("image_url", "price", "category"):
-        if col not in metadata.columns:
-            metadata[col] = ""
+    # load_metadata guarantees image_url/price/category exist ("" when the
+    # dataset doesn't provide them), so the UI adapts to any catalog.
     info = {}
     for _, r in metadata.iterrows():
-        iid = str(r["item_id"])
+        iid = _s(r["item_id"])
         info[iid] = {
-            "title": html.unescape(str(r["title"])).strip()[:140] or iid,
-            "image": str(r["image_url"]) or PLACEHOLDER_IMG,
-            "price": str(r["price"]).strip(),
-            "desc": html.unescape(str(r["description"]))[:800],
-            "category": str(r["category"]).strip() or "Miscellaneous",
+            "title": html.unescape(_s(r["title"])).strip()[:140] or iid,
+            "image": _s(r["image_url"]) or PLACEHOLDER_IMG,
+            "price": _s(r["price"]).strip(),
+            "desc": html.unescape(_s(r["description"]))[:800],
+            "category": _s(r["category"]).strip() or "Miscellaneous",
         }
     reviews = {}
     rp = ROOT / "data" / "reviews.csv"
     if rp.is_file():
         for _, r in pd.read_csv(rp, dtype=str).fillna("").iterrows():
-            reviews.setdefault(str(r["item_id"]), []).append({
+            reviews.setdefault(_s(r["item_id"]), []).append({
                 "reviewer": r["reviewer"] or "a shopper",
                 "rating": float(r["rating"] or 0),
                 "summary": r["summary"],
@@ -119,7 +123,8 @@ def card_html(iid: str, info: dict, extra: str = "") -> str:
     return f"""
     <div style="border:1px solid #e3e6e6;border-radius:8px;padding:12px;
                 background:white;height:100%">
-      <img src="{img}" onerror="this.onerror=null;this.src='{PLACEHOLDER_IMG}'"
+      <img src="{img}" loading="lazy" referrerpolicy="no-referrer"
+           onerror="this.onerror=null;this.src='{PLACEHOLDER_IMG}'"
            style="width:100%;height:170px;object-fit:contain;background:#fafafa;
                   border-radius:4px"/>
       <div style="font-size:13px;margin:8px 0 4px;height:58px;overflow:hidden;
@@ -140,12 +145,16 @@ def product_grid(item_ids, info, extras=None, key_prefix="g", add_cart=True):
                 b1, b2 = st.columns(2)
                 with b1:
                     if st.button("View", key=f"{key_prefix}-v-{ri}-{ci}-{iid}",
-                                 use_container_width=True):
+                                 width="stretch"):
                         st.session_state.page = ("product", iid)
+                        rv = st.session_state.recently_viewed
+                        if iid in rv:
+                            rv.remove(iid)
+                        st.session_state.recently_viewed = [iid] + rv[:11]
                         st.rerun()
                 with b2:
                     if add_cart and st.button("Add", key=f"{key_prefix}-a-{ri}-{ci}-{iid}",
-                                              use_container_width=True):
+                                              width="stretch"):
                         cart = st.session_state.cart
                         cart[iid] = cart.get(iid, 0) + 1
                         st.rerun()
@@ -179,6 +188,14 @@ def rating_extras(item_ids, info, avg_rating, counts, item_pos, models, u_idx,
 # --------------------------------------------------------------------------- #
 st.set_page_config(page_title="ElectroRec", layout="wide")
 
+st.markdown("""
+<div style="background:#131921;color:white;padding:12px 20px;border-radius:8px;
+            margin-bottom:10px;display:flex;align-items:center;gap:12px">
+  <span style="font-size:24px;font-weight:800;letter-spacing:-0.5px">
+    🛒 ElectroRec</span>
+  <span style="color:#febd69;font-size:13px">a thesis recommender, disguised as a store</span>
+</div>""", unsafe_allow_html=True)
+
 ratings, train, val, info, reviews = load_data()
 models = load_models(train)
 hybrid = get_hybrid(models)
@@ -198,6 +215,8 @@ if "uid" not in st.session_state:
     st.session_state.uid = str(user_ids[0])
 if "cart" not in st.session_state:
     st.session_state.cart = {}
+if "recently_viewed" not in st.session_state:
+    st.session_state.recently_viewed = []
 
 # top categories for the nav strip
 cat_counts = pd.Series([d["category"] for d in info.values()]).value_counts()
@@ -234,7 +253,7 @@ with h3:
     with c2:
         n_cart = sum(st.session_state.cart.values())
         if st.button(f"🧺 Cart ({n_cart})", key="cart-btn",
-                     use_container_width=True):
+                     width="stretch"):
             st.session_state.page = ("cart",)
             st.rerun()
 u_idx = user_to_idx.get(st.session_state.uid, 0)
@@ -248,7 +267,7 @@ with nav_cols[0]:
 for i, cat in enumerate(top_cats):
     with nav_cols[i + 1]:
         if st.button(cat[:16], key=f"nav-{i}",
-                     help=cat, use_container_width=True):
+                     help=cat, width="stretch"):
             st.session_state.page = ("category", cat)
             st.rerun()
 
@@ -305,6 +324,13 @@ if page[0] == "home":
           extras=rating_extras(top_rated[:8], info, avg_rating, rating_counts,
                                item_pos, models, u_idx))
 
+    rv = [iid for iid in st.session_state.recently_viewed if iid in info][:8]
+    if rv:
+        shelf("Recently viewed", "Picked up where you left off", rv,
+              key="home-rv",
+              extras=rating_extras(rv, info, avg_rating, rating_counts,
+                                   item_pos, models, u_idx))
+
     with st.expander("How the recommendations work (thesis results)"):
         import json
         sp = ROOT / "logs" / "eval_summary.json"
@@ -316,15 +342,51 @@ if page[0] == "home":
                 for m, agg in metrics.items():
                     row[m] = f"{agg['mean']:.4f} ± {agg['ci95']:.4f}"
                 rows.append(row)
-            st.dataframe(pd.DataFrame(rows), use_container_width=True)
+            st.dataframe(pd.DataFrame(rows), width="stretch")
             st.caption("Mean ± 95% CI over 5 seeds, 17,422 test users.")
+
+    with st.expander("Compare what each model recommends for you"):
+        st.caption(f"Top 5 per model for shopper {st.session_state.uid} — "
+                   "this is the thesis result, live.")
+        comp_models = [
+            ("Popularity", models["popularity"]),
+            ("ItemKNN", models["itemknn"]),
+            ("SVD", models["svd"]),
+            ("Content", models["content"]),
+            ("Hybrid (α=0.7)", hybrid),
+        ]
+        cols = st.columns(len(comp_models))
+        for (name, m), col in zip(comp_models, cols):
+            with col:
+                st.write(f"**{name}**")
+                top5 = recommend(m, u_idx, train_items, val_items, 5, item_ids)
+                for iid in top5:
+                    st.markdown(
+                        f"""<img src="{info[iid]['image']}" loading="lazy"
+                        referrerpolicy="no-referrer"
+                        onerror="this.onerror=null;this.src='{PLACEHOLDER_IMG}'"
+                        style="width:100%;height:90px;object-fit:contain;
+                               background:#fafafa;border-radius:4px"/>""",
+                        unsafe_allow_html=True)
+                    st.caption(info[iid]["title"][:45])
 
 elif page[0] == "category":
     cat = page[1]
     st.header(cat)
     in_cat = [iid for iid, d in info.items() if d["category"] == cat]
-    in_cat.sort(key=lambda iid: -float(avg_rating.get(item_pos[iid], 0)))
-    st.caption(f"{len(in_cat)} products, best rated first")
+    sort = st.selectbox("Sort by", ["Top rated", "Price: low to high",
+                                    "Price: high to low", "Most reviewed"],
+                        key="cat-sort")
+    if sort == "Top rated":
+        in_cat.sort(key=lambda iid: -float(avg_rating.get(item_pos[iid], 0)))
+    elif sort == "Price: low to high":
+        in_cat.sort(key=lambda iid: price_val(info[iid]["price"]))
+    elif sort == "Price: high to low":
+        in_cat.sort(key=lambda iid: -price_val(info[iid]["price"])
+                    if price_val(info[iid]["price"]) != float("inf") else 0)
+    else:
+        in_cat.sort(key=lambda iid: -int(rating_counts.get(item_pos[iid], 0)))
+    st.caption(f"{len(in_cat)} products")
     product_grid(in_cat[:24], info, key_prefix="cat",
                  extras=rating_extras(in_cat[:24], info, avg_rating,
                                       rating_counts, item_pos, models, u_idx))
@@ -346,7 +408,8 @@ elif page[0] == "product":
     st.caption(f"Home / {d['category']} / {d['title'][:60]}")
     c1, c2 = st.columns([1, 2])
     with c1:
-        st.markdown(f"""<img src="{d['image']}"
+        st.markdown(f"""<img src="{d['image']}" loading="lazy"
+            referrerpolicy="no-referrer"
             onerror="this.onerror=null;this.src='{PLACEHOLDER_IMG}'"
             style="width:100%;max-height:420px;object-fit:contain;
                    border:1px solid #e3e6e6;border-radius:8px"/>""",
@@ -368,6 +431,36 @@ elif page[0] == "product":
         if d["desc"]:
             st.write("**About this item**")
             st.write(d["desc"][:600] + ("…" if len(d["desc"]) > 600 else ""))
+
+    # rating distribution from the training ratings
+    item_ratings = train.loc[train["i"] == pos, "rating"]
+    if len(item_ratings):
+        st.subheader("Rating breakdown")
+        dist = item_ratings.value_counts().reindex([5, 4, 3, 2, 1], fill_value=0)
+        total_r = int(dist.sum())
+        for star in (5, 4, 3, 2, 1):
+            n = int(dist[star])
+            pct = 100 * n / total_r if total_r else 0
+            st.write(f"{'★' * star}{'☆' * (5 - star)} "
+                     f"<div style='display:inline-block;width:220px;"
+                     f"background:#eee;border-radius:4px;vertical-align:middle'>"
+                     f"<div style='width:{pct:.0f}%;background:#e67e22;"
+                     f"height:10px;border-radius:4px'></div></div> {pct:.0f}%",
+                     unsafe_allow_html=True)
+
+    with st.expander("Why was this recommended to you?"):
+        st.write("The hybrid score is a weighted blend of two models:")
+        cf_raw = float(models["svd"].score_all_items(u_idx)[pos])
+        co_raw = float(models["content"].score_all_items(u_idx)[pos])
+        st.write(f"- **Collaborative filtering (SVD)** raw score: `{cf_raw:.3f}` "
+                 f"— shoppers with taste like yours rated similar items highly.")
+        st.write(f"- **Content model** raw score: `{co_raw:.3f}` — this item's "
+                 f"description is close to what you liked before.")
+        st.write(f"- **Hybrid** = {ALPHA} × norm(SVD) + {1 - ALPHA} × "
+                 f"norm(content), each normalized to [0, 1] per shopper first, "
+                 f"so the {ALPHA}/{1 - ALPHA} weight is meaningful.")
+        st.caption("α = 0.7 was chosen by grid search on the validation set "
+                   "(logs/grid_search.json).")
 
     st.subheader("Similar items")
     sim = models["itemknn"].sim_topk.tocsr()
@@ -415,7 +508,8 @@ elif page[0] == "cart":
             d = info[iid]
             cols = st.columns([1, 4, 2, 2, 1])
             with cols[0]:
-                st.markdown(f"""<img src="{d['image']}"
+                st.markdown(f"""<img src="{d['image']}" loading="lazy"
+                    referrerpolicy="no-referrer"
                     onerror="this.onerror=null;this.src='{PLACEHOLDER_IMG}'"
                     style="width:80px;height:80px;object-fit:contain"/>""",
                     unsafe_allow_html=True)
@@ -437,3 +531,9 @@ elif page[0] == "cart":
         if st.button("Continue shopping"):
             st.session_state.page = ("home",)
             st.rerun()
+
+st.markdown("---")
+st.caption("ElectroRec — BSc thesis demo: weighted hybrid recommender "
+           "(collaborative filtering + dense neural embeddings) on Amazon "
+           "Electronics. Recommendations update per shopper; every number in "
+           "the results panel is computed by the code, not typed in.")

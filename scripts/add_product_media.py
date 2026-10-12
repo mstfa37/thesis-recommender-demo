@@ -35,7 +35,14 @@ def main() -> None:
             asin = d.get("asin")
             if not asin:
                 continue
-            url = str(d.get("imUrl") or "").replace("http://", "https://")
+            url = str(d.get("imUrl") or "")
+            # normalize to the maintained Amazon CDN host (the old
+            # ecx.images-amazon.com host is deprecated and flaky in browsers)
+            if "/images/I/" in url:
+                url = ("https://m.media-amazon.com/images/I/"
+                       + url.split("/images/I/")[-1])
+            else:
+                url = url.replace("http://", "https://")
             price = d.get("price")
             price = "" if price is None else str(price).strip()
             cats = d.get("categories") or []
