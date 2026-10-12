@@ -279,6 +279,8 @@ with h3:
                             placeholder="shopper id")
         if uid in user_to_idx:
             st.session_state.uid = uid
+        elif uid.strip():
+            st.caption("⚠️ unknown shopper, showing default")
     with c2:
         n_cart = sum(st.session_state.cart.values())
         if st.button(f"🧺 Cart ({n_cart})", key="cart-btn",
@@ -373,6 +375,24 @@ if page[0] == "home":
               key="home-rv",
               extras=rating_extras(rv, info, avg_rating, rating_counts,
                                    item_pos, models, u_idx))
+
+    # personalized category shelf from the shopper's own ratings
+    fav = None
+    if u_idx in train_ratings:
+        cats = {}
+        for i, r in train_ratings[u_idx]:
+            if r >= 4:
+                c = info[str(item_ids[i])]["category"]
+                cats[c] = cats.get(c, 0) + 1
+        if cats:
+            fav = max(cats, key=cats.get)
+    if fav:
+        fav_items = [iid for iid, d in info.items() if d["category"] == fav]
+        fav_items.sort(key=lambda iid: -float(avg_rating.get(item_pos[iid], 0)))
+        shelf(f"More {fav}", "Because you love this category", fav_items[:8],
+              key="home-fav",
+              extras=rating_extras(fav_items[:8], info, avg_rating,
+                                   rating_counts, item_pos, models, u_idx))
 
     with st.expander("How the recommendations work (thesis results)"):
         import json
@@ -577,9 +597,26 @@ elif page[0] == "product":
     product_grid(sim_ids, info, key_prefix="sim")
 
     st.subheader("Shoppers also liked")
-    more = [x for x in recommend(hybrid, u_idx, train_items, val_items, 12,
-                                 item_ids) if x != iid][:8]
-    product_grid(more, info, key_prefix="also")
+    st.caption("Real co-rating: what else did shoppers who loved this item "
+               "rate 4 stars or more?")
+    likers = set(train.loc[(train["i"] == pos) & (train["rating"] >= 4), "u"])
+    also_ids = []
+    if likers:
+        co = train[train["u"].isin(likers) & (train["rating"] >= 4)
+                   & (train["i"] != pos)]
+        top_co = co["i"].value_counts().head(20)
+        seen = train_items.get(u_idx, set()) | val_items.get(u_idx, set())
+        also_ids = [str(item_ids[i]) for i in top_co.index
+                    if i not in seen and str(item_ids[i]) != iid][:8]
+    if also_ids:
+        product_grid(also_ids, info, key_prefix="also",
+                     extras=rating_extras(also_ids, info, avg_rating,
+                                           rating_counts, item_pos, models,
+                                           u_idx))
+    else:
+        more = [x for x in recommend(hybrid, u_idx, train_items, val_items,
+                                      12, item_ids) if x != iid][:8]
+        product_grid(more, info, key_prefix="also")
 
     st.subheader("Customer reviews")
     revs = reviews.get(iid, [])
